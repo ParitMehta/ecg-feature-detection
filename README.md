@@ -299,37 +299,120 @@ all 12 leads in a 6×2 grid. A sidebar threshold slider (default 0.5) overrides 
 val-tuned thresholds for live exploration. A fairness panel at the bottom displays the
 sex and age breakdown plots from `reports/fairness/` if they exist.
 
-> **Note:** This app is a research demonstration only. It is not a medical device and
-> must not be used to inform clinical decisions.
+### `src/` — Shared Library
+
+These files are imported by the pipeline scripts and do not need to be run directly.
+They exist so that common logic (file paths, data loading, signal cleaning, the model
+definition) is written once and shared across all six scripts rather than duplicated.
+
+- **`paths.py`** — Defines where everything lives on disk: the raw dataset, the
+  processed arrays, and the output folders for each pipeline stage. All output
+  folders are created automatically the first time any script is run, so nothing
+  needs to be created manually.
+
+- **`loader.py`** — Handles reading the PTB-XL files from disk: the patient
+  metadata spreadsheet, the diagnostic code reference table, and the raw ECG signal
+  files. The scripts call these functions rather than dealing with file formats directly.
+
+- **`preprocess.py`** — Contains the signal cleaning and data preparation logic:
+  filtering noise from the ECG signals, normalising each lead, converting diagnosis
+  codes into a label matrix, and splitting recordings into train/validation/test sets.
+
+- **`model.py`** — Defines the neural network (`ECGNet`). See the architecture
+  section below.
+
+#### Model architecture
+
+`ECGNet` is a 1D convolutional neural network. It takes a 10-second, 12-lead ECG as
+input and outputs a probability for each of the five diagnostic classes. The key design
+decisions are:
+
+- **1D convolutions** operate along the time axis, detecting local waveform patterns
+  (e.g. a QRS complex) across all 12 leads at once.
+- **Three convolutional blocks** progressively increase the number of filters (32 → 64
+  → 128) while halving the time resolution at each step via max-pooling, allowing later
+  layers to detect longer-range patterns.
+- **Global average pooling** collapses the entire time axis into a single 128-dimensional
+  vector before the final classification layer, making the model robust to slight
+  differences in recording length.
+- **Five independent outputs** — one logit per class — so a recording can be positive
+  for any combination of classes simultaneously.
+
+Input → (batch, 12 leads, 1000 time steps @ 100 Hz)
+│
+▼
+Block 1: Conv1d → BatchNorm → ReLU → MaxPool → (batch, 32, 500)
+Block 2: Conv1d → BatchNorm → ReLU → MaxPool → (batch, 64, 250)
+Block 3: Conv1d → BatchNorm → ReLU → MaxPool → (batch, 128, 125)
+│
+▼
+GlobalAvgPool → (batch, 128)
+Linear → (batch, 5 logits)
+│
+▼
+Output → sigmoid → probability per class
+
+text
 
 ---
 
 ## MLflow Experiment Tracking
 
-Training runs are stored in the local MLflow store under `mlruns/`, experiment `ptbxl_baseline_cnn`, run name `baseline-cnn`. Each run logs: hyperparameters (`batch_size=128`, `epochs=10`, `learning_rate=1e-3`, `weight_decay=1e-4`, `channels="32-64-128"`, `sampling_rate=100`, `loss="BCEWithLogitsLoss+pos_weight"`, `optimiser="Adam"`, `seed=0`), split sizes, `class_names.json`, per-epoch metrics, final test metrics, per-class test AUROC, the `thresholds.json` and `report.txt` artifacts, and the trained PyTorch model with an input example.
+MLflow records every training run automatically — hyperparameters, loss curves, and
+final metrics — so results are reproducible and comparable across runs.
+
+After training, browse the run history in a local web UI:
 
 ```bash
 mlflow ui --backend-store-uri ./mlruns
+# then open http://localhost:5000
 ```
+
+Everything logged per run:
+
+- All training hyperparameters (learning rate, batch size, etc.)
+- Loss and AUROC at every epoch, for both the training and validation sets
+- Final test AUROC overall and per class
+- The saved model weights and the val-tuned thresholds file
 
 ---
 
 ## Streamlit Demo
 
+The demo app lets you run the trained model on any ECG recording through a browser
+interface — no code required.
+
+### Before launching
+
+Two pipeline steps must have been run first:
+
+```bash
+python scripts/02_preprocess.py   # produces the test-set arrays
+python scripts/03_train.py        # produces the trained model
+```
+
 ### Launch
 
 ```bash
 streamlit run scripts/06_app.py
+# then open http://localhost:8501
 ```
 
-`reports/train/best_model.pt` and `data/processed/{X_test.npy, y_test.npy, class_names.txt}` must exist before launching the app. Run `02_preprocess.py` and `03_train.py` first.
+### How to use it
 
-### Intended Use
+Choose an input source from the sidebar:
 
-Research demonstration only — not a medical device and must not be used to inform clinical decisions.
+| Option | Use when… |
+|---|---|
+| **Browse test set** | Exploring model behaviour on recordings it has already been evaluated on. Ground-truth labels are shown for comparison. |
+| **Upload WFDB record** | Testing on a new PTB-XL recording. Upload the `.hea` and `.dat` files together. |
+| **Upload .npy array** | Testing on a custom recording exported as a NumPy array of shape `(1000, 12)`. |
 
----
-
+The sidebar also has a **threshold slider** (default 0.5). Lowering it makes the model
+more sensitive — it will flag more recordings as positive for a given class but will
+also produce more false positives. The val-tuned thresholds in `thresholds.json` are
+the values that maximised F1 on the validation set and are the recommended defaults for
+evaluation.
 ## Evaluation
 
 - **Primary metric:** macro-averaged AUROC across the five superclasses on the held-out test fold (fold 10).
