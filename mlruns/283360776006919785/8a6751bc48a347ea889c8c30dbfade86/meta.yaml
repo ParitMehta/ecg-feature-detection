@@ -1,0 +1,14 @@
+artifact_uri: file:///home/mehta/ML Projects/healthtech/mlruns/283360776006919785/8a6751bc48a347ea889c8c30dbfade86/artifacts
+end_time: null
+entry_point_name: ''
+experiment_id: '283360776006919785'
+lifecycle_stage: active
+run_id: 8a6751bc48a347ea889c8c30dbfade86
+run_name: baseline-cnn
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1777336740566
+status: 1
+tags: []
+user_id: mehta

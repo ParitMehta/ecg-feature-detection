@@ -1,0 +1,10 @@
+artifact_location: file:///home/mehta/ML Projects/healthtech/mlruns/283360776006919785/models/m-e127124f4cdf4f4c9f9ffaabfcd6639e/artifacts
+creation_timestamp: 1777340092436
+experiment_id: '283360776006919785'
+last_updated_timestamp: 1777340096611
+model_id: m-e127124f4cdf4f4c9f9ffaabfcd6639e
+model_type: null
+name: model
+source_run_id: 4ff233187ef44010bc94332bc359fe95
+status: 2
+status_message: null
