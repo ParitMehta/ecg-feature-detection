@@ -108,62 +108,199 @@ The canonical committed diagram is `reports/preprocess/pipeline_dag.png`, regene
 ![Pipeline DAG](reports/preprocess/pipeline_dag.png)
 
 ---
-
 ## Pipeline — File-by-File
+
+The pipeline is split into six numbered scripts that must be run in order. Each script
+is self-contained: it reads from the outputs of the previous step and writes its own
+outputs to a dedicated subfolder under `reports/`.
+
+---
 
 ### `scripts/01_eda.py` — Exploratory Data Analysis
 
-Assembles `load_metadata → add_diagnostic_labels → keep_patients_with_recordings` plus seven `@pipefunc` EDA stages into a `pipefunc.Pipeline(profile=True)` and executes the full graph via `pipeline("eda_summary", dataset_folder=DATASET_FOLDER)`. Stages: class counts, unlabelled-patient count, lead-I preview of the first three patients, label-cardinality distribution, per-fold diagnosis distribution, reference ECG plots (one per superclass and all 12 leads of the first patient), and a sanity check on 100 random recordings (NaNs, min/max voltage, quietest-lead std).
+**Purpose:** Understand the dataset before touching it — class balance, label overlap,
+signal quality, and how recordings are distributed across the ten folds.
+
+Run this first to confirm the data downloaded correctly and to get a visual sense of
+what the five diagnostic classes look like as raw ECG waveforms.
+
+```bash
+python scripts/01_eda.py
+```
+
+**What it does:**
+
+- Counts recordings per diagnostic class and flags any recordings with no diagnostic label
+- Plots lead-I waveforms for the first three patients
+- Shows how many labels each recording carries (some recordings have more than one diagnosis)
+- Plots the class distribution across all ten folds to verify stratification
+- Exports one representative ECG per superclass and a full 12-lead plot for the first patient
+- Runs a sanity check on 100 random recordings: checks for NaNs, voltage range, and
+  whether any lead is near-silent
 
 **Outputs in `reports/eda/`:**
 
-- `class_counts.csv`, `01_class_counts.png`
-- `02_lead_I_first_three.png`
-- `labels_per_record.csv`
-- `per_fold_distribution.csv`, `03_per_fold_distribution.png`
-- `04_one_record_per_superclass.png`, `05_all_12_leads.png`
-- `eda_summary.txt`
+| File | Description |
+|---|---|
+| `class_counts.csv` / `01_class_counts.png` | Recording count per superclass |
+| `02_lead_I_first_three.png` | Lead-I waveforms for patients 1–3 |
+| `labels_per_record.csv` | Label-cardinality distribution |
+| `per_fold_distribution.csv` / `03_per_fold_distribution.png` | Class balance across folds |
+| `04_one_record_per_superclass.png` | One representative ECG per class |
+| `05_all_12_leads.png` | All 12 leads of the first patient |
+| `eda_summary.txt` | Plain-text summary of all findings |
+
+---
 
 ### `scripts/02_preprocess.py` — Preprocessing
 
-Builds the full `pipefunc.Pipeline` (`load_metadata → add_diagnostic_labels → keep_patients_with_recordings → load_raw_signals → clean_ecg_signals → build_diagnosis_matrix → split_by_fold`), renders the DAG to `reports/preprocess/pipeline_dag.png`, executes it at 100 Hz with `val_fold=9` / `test_fold=10`, and serialises the splits. Signal cleaning applies a 3rd-order Butterworth bandpass (0.5–40 Hz) followed by per-lead z-scoring. Labels are produced by `MultiLabelBinarizer` over the fixed class list `["NORM","MI","STTC","CD","HYP"]`.
+**Purpose:** Convert the raw WFDB recordings into clean NumPy arrays that the model
+can train on, and produce the train/validation/test split files.
 
-**Reads:** `ptbxl_database.csv`, `scp_statements.csv`, `records100/*.hea+.dat`  
-**Writes to `PROCESSED`:** `X_train.npy`, `y_train.npy`, `X_val.npy`, `y_val.npy`, `X_test.npy`, `y_test.npy`, `class_names.txt`  
-**Writes to `reports/preprocess/`:** `pipeline_dag.png`
+```bash
+python scripts/02_preprocess.py
+```
 
-### `scripts/03_train.py` — Training (with MLflow)
+**What it does:**
 
-Loads the `.npy` splits, permutes axes to `(batch, 12, time)`, and trains `ECGNet` for 10 epochs with `BCEWithLogitsLoss` + per-class `pos_weight = neg/pos`, Adam (`lr=1e-3`, `weight_decay=1e-4`), batch size 128, gradient clipping at norm 5.0, and seed 0. The best checkpoint is selected by validation macro-AUROC, then reloaded to tune per-class decision thresholds on the validation set via an F1-argmax sweep over `np.arange(0.05, 0.96, 0.01)`. Test metrics are computed on the best checkpoint using the tuned thresholds.
+1. Loads metadata and filters out recordings with no diagnostic label
+2. Reads the raw 100 Hz ECG signals from disk
+3. Cleans each signal with a 3rd-order Butterworth bandpass filter (0.5–40 Hz) to
+   remove baseline wander and high-frequency noise, then z-scores each lead independently
+4. Converts the SCP-ECG diagnostic codes into a binary label matrix
+   (`NORM`, `MI`, `STTC`, `CD`, `HYP`), one column per class
+5. Splits recordings into train (folds 1–8), validation (fold 9), and test (fold 10)
+6. Saves each split as `.npy` files ready for training
 
-MLflow is configured with `set_tracking_uri("file:///…/mlruns")` and `set_experiment("ptbxl_baseline_cnn")`. The `baseline-cnn` run logs all hyperparameters, split sizes, `class_names.json`, per-epoch `train_loss` / `val_loss` / `val_macro_auroc`, final test metrics, per-class test AUROC, the `thresholds.json` and `report.txt` artifacts, and the trained PyTorch model with an input example.
+Also renders the full pipeline as a DAG diagram at `reports/preprocess/pipeline_dag.png`.
 
-**Outputs in `reports/train/`:** `best_model.pt`, `thresholds.json`, `report.txt`
+**Writes to `data/processed/`:**
+
+`X_train.npy`, `y_train.npy`, `X_val.npy`, `y_val.npy`, `X_test.npy`, `y_test.npy`, `class_names.txt`
+
+---
+
+### `scripts/03_train.py` — Training
+
+**Purpose:** Train the 1D-CNN (`ECGNet`) on the preprocessed splits, select the best
+checkpoint, tune per-class decision thresholds on the validation set, and evaluate on
+the held-out test fold.
+
+```bash
+python scripts/03_train.py
+```
+
+**What it does:**
+
+1. Trains `ECGNet` for 10 epochs using binary cross-entropy loss with per-class
+   positive-weight correction to handle class imbalance
+2. Saves the checkpoint with the highest validation macro-AUROC as `best_model.pt`
+3. Tunes a separate decision threshold for each class on the validation set by sweeping
+   over thresholds from 0.05 to 0.95 and selecting the one that maximises F1 — this step
+   matters because a fixed 0.5 threshold performs poorly on imbalanced classes like HYP
+4. Evaluates the best checkpoint on the test fold using the tuned thresholds
+5. Logs all hyperparameters, metrics, and artifacts to MLflow
+
+**Outputs in `reports/train/`:**
+
+| File | Description |
+|---|---|
+| `best_model.pt` | Saved model weights |
+| `thresholds.json` | Val-tuned decision threshold per class |
+| `report.txt` | Best val AUROC, test AUROC, and per-class AUROC |
+
+---
 
 ### `scripts/04_inspect.py` — Model Inspection
 
-Loads `best_model.pt` and `thresholds.json` (falls back to 0.5 per class if absent), runs batched sigmoid inference on the test fold, and writes per-class AUROC/F1/precision/recall/support plus a `macro` row. Also renders a per-class AUROC bar chart, a grid of per-class 2×2 confusion matrices at val-tuned thresholds, a prediction co-occurrence matrix, a 20-row prediction CSV, and a gallery of three exact-match and three mismatch examples plotted on lead II (z-scored).
+**Purpose:** Produce a detailed breakdown of model performance on the test set — not
+just a single number, but per-class metrics, confusion matrices, and concrete examples
+of correct and incorrect predictions.
 
-**Outputs in `reports/inspect/`:** `metrics_per_class.csv`, `per_class_auroc.png`, `confusion_matrices.png`, `pred_cooccurrence.csv`, `predictions_head.csv`, `patient_{n:02d}_idx{idx}.png` gallery
+```bash
+python scripts/04_inspect.py
+```
+
+**What it does:**
+
+1. Loads the trained model and the val-tuned thresholds from `reports/train/`
+2. Runs inference on the full test fold
+3. Reports AUROC, F1, precision, recall, and support for each class individually,
+   plus macro averages
+4. Renders a 2×2 confusion matrix for each class at its tuned threshold
+5. Exports a co-occurrence matrix showing which pairs of classes are predicted together
+6. Saves a gallery of six example patients — three where predictions exactly match the
+   ground-truth labels, and three where they do not — plotted on lead II
+
+**Outputs in `reports/inspect/`:**
+
+| File | Description |
+|---|---|
+| `metrics_per_class.csv` | AUROC/F1/precision/recall/support per class |
+| `per_class_auroc.png` | Bar chart of per-class AUROC |
+| `confusion_matrices.png` | 2×2 confusion matrix per class |
+| `pred_cooccurrence.csv` | Prediction co-occurrence counts |
+| `predictions_head.csv` | First 20 rows of predicted vs. true labels |
+| `patient_XX_idxYYYY.png` | Example correct / incorrect patient plots |
+
+---
 
 ### `scripts/05_fairness.py` — Fairness Audit
 
-Rebuilds the test-fold metadata by calling the pipefunc nodes directly (`load_metadata.func → add_diagnostic_labels.func → keep_patients_with_recordings.func`), asserts row alignment with `X_test`, and runs inference at the val-tuned thresholds. Patients are binned into `male` (sex==0), `female` (sex==1), and four age bands (`<40`, `40-60`, `60-75`, `75+`) via `pd.cut(age, bins=[-0.1, 40, 60, 75, 200])`. For each group the script reports macro and per-class AUROC/F1/precision/recall.
+**Purpose:** Check whether the model performs equally well across demographic groups.
+A model with a strong overall AUROC can still systematically underperform for specific
+patient subgroups — this script surfaces those gaps.
 
-**Outputs in `reports/fairness/`:** `subgroup_metrics.csv`, `metrics_by_sex.png`, `metrics_by_age.png`
+```bash
+python scripts/05_fairness.py
+```
+
+**What it does:**
+
+1. Reconstructs the test-fold patient metadata (sex, age) and aligns it with `X_test`
+2. Bins patients into six subgroups: male, female, and four age bands
+   (<40, 40–60, 60–75, 75+)
+3. Runs inference at the val-tuned thresholds and reports macro and per-class
+   AUROC/F1/precision/recall for each subgroup separately
+
+**Outputs in `reports/fairness/`:**
+
+| File | Description |
+|---|---|
+| `subgroup_metrics.csv` | Full macro + per-class metrics for every subgroup |
+| `metrics_by_sex.png` | Metric comparison: male vs. female |
+| `metrics_by_age.png` | Metric comparison across the four age bands |
+
+---
 
 ### `scripts/06_app.py` — Streamlit Demo
 
-Caches the test-set arrays and the `ECGNet` checkpoint, and exposes three input modes via a sidebar radio: **Browse test set** (select a row from `X_test.npy` / `y_test.npy`), **Upload WFDB record** (paired `.hea` + `.dat`, resampled to 100 Hz and truncated to 1000 samples), and **Upload .npy (1000×12)** (raw float array, re-cleaned with the same 0.5–40 Hz bandpass + z-score as training). A sidebar slider exposes a global decision threshold (default 0.5) that overrides the val-tuned thresholds for interactive exploration.
+**Purpose:** Provide an interactive interface for exploring model predictions on
+individual ECG recordings — useful for understanding model behaviour without writing code.
 
-The main pane displays predicted vs. true labels (when available), a per-class probability bar chart, and the 12-lead signal laid out in a 6×2 grid. A fairness panel at the bottom renders `auroc_by_sex.png`, `auroc_by_age.png`, and `subgroup_metrics.csv` from `reports/fairness/` when they exist.
+```bash
+streamlit run scripts/06_app.py
+```
 
-### `src/` — Shared Library
+**Prerequisites:** `reports/train/best_model.pt` and the processed test-set files
+(`X_test.npy`, `y_test.npy`, `class_names.txt`) must exist. Run `02_preprocess.py`
+and `03_train.py` first.
 
-- **`src/paths.py`** — centralises `DATASET`, `PROCESSED`, `REPORTS`, `MLRUNS`, and per-stage dirs (`EDA`, `PREPROCESS`, `TRAIN`, `INSPECT`, `FAIRNESS`); auto-creates every output folder on import.
-- **`src/loader.py`** — `load_metadata` parses `ptbxl_database.csv` (with `ast.literal_eval` on `scp_codes`); `add_diagnostic_labels` joins against `scp_statements.csv` filtered by `diagnostic == 1`; `load_raw_signals` reads WFDB records from `filename_lr` (100 Hz) or `filename_hr` (500 Hz).
-- **`src/preprocess.py`** — `keep_patients_with_recordings`, `clean_ecg_signals` (3rd-order Butterworth 0.5–40 Hz + per-lead z-score), `build_diagnosis_matrix` (multi-label binariser with fixed class order), `split_by_fold`.
-- **`src/model.py`** — `ECGNet`: three `Conv1d(k=7, pad=3) → BatchNorm1d → ReLU → MaxPool1d(2)` blocks with channels `(32, 64, 128)`, followed by `AdaptiveAvgPool1d(1)` and a `Linear(128, n_classes)` head; input shape `(batch, 12, time)`, output shape `(batch, 5)` logits.
+**Three input modes (sidebar radio):**
+
+| Mode | What to provide |
+|---|---|
+| Browse test set | Select any row from the preprocessed test split by index |
+| Upload WFDB record | Upload a paired `.hea` + `.dat` file from the PTB-XL dataset |
+| Upload .npy array | Upload a raw `(1000, 12)` float array |
+
+The main pane shows predicted vs. true labels, a per-class probability bar chart, and
+all 12 leads in a 6×2 grid. A sidebar threshold slider (default 0.5) overrides the
+val-tuned thresholds for live exploration. A fairness panel at the bottom displays the
+sex and age breakdown plots from `reports/fairness/` if they exist.
+
+> **Note:** This app is a research demonstration only. It is not a medical device and
+> must not be used to inform clinical decisions.
 
 ---
 
