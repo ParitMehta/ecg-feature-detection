@@ -9,21 +9,19 @@ of a QRS peak or the energy distribution across frequency bands, and standard
 models have no reason to look for that structure unless it is given to them. One
 way to surface it is to convert the signal into a spectrogram, a 2D image of
 time versus frequency, and classify that image with a convolutional neural
-network, the same architecture used in medical imaging. Another is to extract
-known spectral features directly from the signal. It is unknown whether either
-approach improves over the raw-signal baseline, whether combining them adds
+network, the same architecture used in medical imaging. 
+
+This project classifies 12-lead ECG recordings from the PTB-XL dataset into five diagnostic superclasses (NORM, MI, STTC, CD, HYP) and audits performance variation across patient sex and age groups. The pipeline runs as a numbered sequence of scripts (EDA → preprocessing → training → inspection → fairness → demo) and ships with a Streamlit app for single-recording inference.
+Most published PTB-XL work reports a single aggregate AUROC; this project additionally benchmarks a 1D-CNN baseline, evaluates per-class performance at val-tuned decision thresholds, and measures subgroup performance across sex and age via a dedicated fairness audit.
+
+Future aims: Another way is to extract known spectral features directly from the signal. It is unknown whether either approach improves over the raw-signal baseline, whether combining them adds
 anything, and whether the answer changes depending on the cardiac condition or
-the quality of the recording. This project tests that on the PTB-XL dataset, and
+the quality of the recording. This project will test that on the PTB-XL dataset, and
 separately asks how much accuracy survives when the models are compressed for
 deployment in settings where patient data cannot leave the premises.
 
 
 
-# ECG Diagnostic Classification Using Time-Frequency Representations
-
-This project classifies 12-lead ECG recordings from the PTB-XL dataset into five diagnostic superclasses (NORM, MI, STTC, CD, HYP) and audits performance variation across patient sex and age groups. The pipeline runs as a numbered sequence of scripts (EDA → preprocessing → training → inspection → fairness → demo) and ships with a Streamlit app for single-recording inference.
-
-ML-driven ECG screening can detect cardiac conditions that would otherwise go undiagnosed until an emergency event, making large-scale preventive cardiology increasingly feasible. Most published PTB-XL work reports a single aggregate AUROC; this project additionally benchmarks a 1D-CNN baseline, evaluates per-class performance at val-tuned decision thresholds, and measures subgroup performance across sex and age via a dedicated fairness audit.
 
 ---
 
