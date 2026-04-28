@@ -1,0 +1,22 @@
+{
+  "NORM": {
+    "threshold": 0.31,
+    "val_f1": 0.8533
+  },
+  "MI": {
+    "threshold": 0.81,
+    "val_f1": 0.7292
+  },
+  "STTC": {
+    "threshold": 0.68,
+    "val_f1": 0.75
+  },
+  "CD": {
+    "threshold": 0.62,
+    "val_f1": 0.7476
+  },
+  "HYP": {
+    "threshold": 0.67,
+    "val_f1": 0.4924
+  }
+}
