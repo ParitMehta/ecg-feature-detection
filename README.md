@@ -74,8 +74,12 @@ ecg-feature-detection/
 │   ├── 03_train.py
 │   ├── 04_inspect.py
 │   ├── 05_fairness.py
-│   ├── 06_app.py
-│   └── download_data.sh
+│   ├── ECG_Classifier.py       # Streamlit frontend (calls API)
+│   ├── download_data.sh
+│   └── pages/
+│       └── 01_Overview.py      # Overview + GDPR page (Streamlit multipage)
+├── api/
+│   └── main.py                 # FastAPI backend — serves ECGNet over HTTP
 ├── configs/
 ├── docs/
 ├── notebooks/
@@ -273,18 +277,19 @@ python scripts/05_fairness.py
 
 ---
 
-### `scripts/06_app.py` — Streamlit Demo
+### `scripts/ECG_Classifier.py` — Streamlit Demo
 
 **Purpose:** Provide an interactive interface for exploring model predictions on
 individual ECG recordings — useful for understanding model behaviour without writing code.
 
 ```bash
-streamlit run scripts/06_app.py
+streamlit run scripts/ECG_Classifier.py
 ```
 
-**Prerequisites:** `reports/train/best_model.pt` and the processed test-set files
-(`X_test.npy`, `y_test.npy`, `class_names.txt`) must exist. Run `02_preprocess.py`
-and `03_train.py` first.
+**Prerequisites:** `reports/train/best_model.pt`, `thresholds.json`, and the processed
+test-set files (`X_test.npy`, `y_test.npy`, `class_names.txt`) must exist. Run
+`02_preprocess.py` and `03_train.py` first. The model is served via `api/main.py`
+(FastAPI) — the Streamlit app never loads `ECGNet` directly.
 
 **Three input modes (sidebar radio):**
 
@@ -295,9 +300,25 @@ and `03_train.py` first.
 | Upload .npy array | Upload a raw `(1000, 12)` float array |
 
 The main pane shows predicted vs. true labels, a per-class probability bar chart, and
-all 12 leads in a 6×2 grid. A sidebar threshold slider (default 0.5) overrides the
-val-tuned thresholds for live exploration. A fairness panel at the bottom displays the
+all 12 leads in a 6×2 grid. Per-class sidebar sliders default to the val-tuned thresholds from `thresholds.json`
+and can be adjusted for live exploration. A fairness panel at the bottom displays the
 sex and age breakdown plots from `reports/fairness/` if they exist.
+
+### `scripts/pages/01_Overview.py` — Overview Page
+
+Streamlit multipage script for the **Project Overview** page, written for non-technical
+readers (e.g. medical students). It appears in the Streamlit sidebar automatically
+when `ECG_Classifier.py` is running.
+
+Covers, in plain language:
+
+- Where the ECGs come from (PTB‑XL)
+- The five diagnostic superclasses (NORM, MI, STTC, CD, HYP)
+- How the train / validation / test split is set up
+- How the model “looks” at ECGs (1D‑CNN intuition)
+- Decision thresholds and the meaning of the sliders
+- How to interpret AUROC, F1, and the fairness plots
+- Limitations and a data protection (GDPR) notice
 
 ### `src/` — Shared Library
 
@@ -388,13 +409,19 @@ Two pipeline steps must have been run first:
 
 ```bash
 python scripts/02_preprocess.py   # produces the test-set arrays
-python scripts/03_train.py        # produces the trained model
+python scripts/03_train.py        # produces the trained model + thresholds.json
 ```
 
 ### Launch
 
+Start the FastAPI model backend in one terminal, and the Streamlit app in another:
+
 ```bash
-streamlit run scripts/06_app.py
+# Terminal 1 — model API
+uvicorn api.main:app --host 0.0.0.0 --port 8000
+
+# Terminal 2 — Streamlit frontend
+streamlit run scripts/ECG_Classifier.py
 # then open http://localhost:8501
 ```
 
@@ -408,11 +435,11 @@ Choose an input source from the sidebar:
 | **Upload WFDB record** | Testing on a new PTB-XL recording. Upload the `.hea` and `.dat` files together. |
 | **Upload .npy array** | Testing on a custom recording exported as a NumPy array of shape `(1000, 12)`. |
 
-The sidebar also has a **threshold slider** (default 0.5). Lowering it makes the model
-more sensitive — it will flag more recordings as positive for a given class but will
-also produce more false positives. The val-tuned thresholds in `thresholds.json` are
-the values that maximised F1 on the validation set and are the recommended defaults for
-evaluation.
+The sidebar has **one slider per diagnosis**, defaulting to the val-tuned thresholds
+from `thresholds.json`. Lowering a slider makes the model more sensitive for that
+diagnosis; raising it makes it more cautious. The val-tuned values maximised F1 on
+the validation set and are the recommended defaults for evaluation.
+
 ## Evaluation
 
 - **Primary metric:** macro-averaged AUROC across the five superclasses on the held-out test fold (fold 10).
@@ -489,7 +516,12 @@ python scripts/02_preprocess.py
 python scripts/03_train.py
 python scripts/04_inspect.py
 python scripts/05_fairness.py
-streamlit run scripts/06_app.py
+
+# Start the model API (keep this terminal open)
+uvicorn api.main:app --host 0.0.0.0 --port 8000
+
+# In a second terminal, start the Streamlit app
+streamlit run scripts/ECG_Classifier.py
 ```
 
 Each step depends on outputs produced by the previous one.
