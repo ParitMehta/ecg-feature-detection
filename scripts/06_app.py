@@ -64,8 +64,21 @@ model, device = load_model(len(classes))
 mode = st.sidebar.radio("Input source",
                         ["Browse test set", "Upload WFDB record",
                          "Upload .npy (1000×12)"])
-threshold = st.sidebar.slider("decision threshold", 0.0, 1.0, 0.5, 0.05)
+import json
 
+# Load the tuned thresholds, fall back to 0.5 if file missing
+thr_path = TRAIN_OUT / "thresholds.json"
+if thr_path.exists():
+    thr_raw = json.loads(thr_path.read_text())
+    default_thresholds = {c: thr_raw[c]["threshold"] for c in classes}
+else:
+    default_thresholds = {c: 0.5 for c in classes}
+
+st.sidebar.markdown("**Decision thresholds** (pre-set from validation tuning)")
+thresholds = {
+    c: st.sidebar.slider(c, 0.0, 1.0, float(default_thresholds[c]), 0.01)
+    for c in classes
+}
 # ---------- get a signal + optional ground truth ----------
 sig, truth = None, None
 if mode == "Browse test set":
@@ -108,7 +121,9 @@ if sig is None:
     st.stop()
 
 probs = predict(model, device, sig)
-preds = (probs >= threshold).astype(int)
+# new — per-class threshold applied individually
+thr_array = np.array([thresholds[c] for c in classes])
+preds = (probs >= thr_array).astype(int)
 
 pred_labels = [c for c, v in zip(classes, preds) if v] or ["(none)"]
 c1, c2 = st.columns(2)
