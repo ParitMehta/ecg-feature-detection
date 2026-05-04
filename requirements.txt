@@ -1,7 +1,14 @@
-wfdb
-pandas
+fastapi
+uvicorn[standard]
+streamlit
+torch
 numpy
+pandas
 scipy
 matplotlib
-torch
+wfdb
+requests
 pyyaml
+scikit-learn
+pipefunc[all]
+mlflow

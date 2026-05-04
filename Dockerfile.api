@@ -1,0 +1,23 @@
+FROM python:3.12-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir \
+    "fastapi>=0.111" \
+    "uvicorn[standard]>=0.30" \
+    "torch>=2.0" \
+    "numpy>=1.24" \
+    "pyyaml>=6.0"
+
+COPY src/ src/
+COPY api/ api/
+COPY data/processed/class_names.txt data/processed/class_names.txt
+COPY reports/train/best_model.pt reports/train/best_model.pt
+
+EXPOSE 8000
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]

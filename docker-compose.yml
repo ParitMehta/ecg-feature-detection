@@ -1,0 +1,27 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: ecg-api
+    networks:
+      - ecgnet
+    # No 'ports' here — not exposed to outside, only reachable internally
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.app
+    container_name: ecg-app
+    depends_on:
+      - api
+    ports:
+      - "8501:8501"
+    environment:
+      - API_URL=http://api:8000/predict
+    networks:
+      - ecgnet
+
+networks:
+  ecgnet:
+    driver: bridge

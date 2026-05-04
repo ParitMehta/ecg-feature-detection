@@ -1,12 +1,12 @@
 # src/paths.py
+import os
 from pathlib import Path
 
-ROOT       = Path("/home/mehta/ML Projects/healthtech")
-DATASET    = ROOT / "data/physionet.org/files/ptb-xl/1.0.3"
-PROCESSED  = ROOT / "data/processed"
-REPORTS    = ROOT / "reports"
+ROOT      = Path(os.getenv("PROJECT_ROOT", Path(__file__).resolve().parents[1]))
+DATASET   = ROOT / "data/physionet.org/files/ptb-xl/1.0.3"
+PROCESSED = ROOT / "data/processed"
+REPORTS   = ROOT / "reports"
 
-# Per-stage output folders (auto-created on import)
 EDA        = REPORTS / "eda"
 PREPROCESS = REPORTS / "preprocess"
 TRAIN      = REPORTS / "train"

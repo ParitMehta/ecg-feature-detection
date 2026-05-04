@@ -4,7 +4,6 @@
 
 import sys, io, tempfile, json
 from pathlib import Path
-sys.path.insert(0, "/home/mehta/ML Projects/healthtech")
 
 import numpy as np
 import pandas as pd
@@ -19,8 +18,8 @@ from src.paths import PROCESSED, REPORTS
 FAIRNESS = REPORTS / "fairness"
 LEADS = ["I","II","III","aVR","aVL","aVF","V1","V2","V3","V4","V5","V6"]
 
-# URL of your FastAPI backend
-API_URL = "http://localhost:8000/predict"  # change to your server URL if needed
+import os
+API_URL = os.getenv("API_URL", "http://localhost:8000/predict")
 
 st.set_page_config(page_title="ECG Classifier Demo", layout="wide")
 st.title("🫀 ECG Diagnostic Classifier")
