@@ -15,13 +15,13 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          git config user.email "ci@github"
-          git config user.name "GitHub CI"
           git clone https://treehugger4:$HF_TOKEN@huggingface.co/spaces/treehugger4/ecg-api hf_space
-          cp -r api/ hf_space/api/
-          cp -r src/ hf_space/src/
-          cp Dockerfile.api hf_space/Dockerfile
           cd hf_space
+          git config user.email "ci@github.com"
+          git config user.name "GitHub CI"
+          cp -r ../api/ api/
+          cp -r ../src/ src/
+          cp ../Dockerfile.api Dockerfile
           git add -A
           git diff --cached --quiet || git commit -m "sync from GitHub ${{ github.sha }}"
           git push
