@@ -3,12 +3,6 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-print("PATH:", sys.path[:3], flush=True)
-print("FILES:", list(Path("/app").iterdir()), flush=True)
-
 import os
 import numpy as np
 import torch
@@ -16,7 +10,6 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from huggingface_hub import hf_hub_download
 
-from src.paths import PROCESSED
 from src.model import ECGNet
 
 app = FastAPI(title="ECGNet API")
