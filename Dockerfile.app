@@ -17,6 +17,7 @@ RUN pip install --no-cache-dir \
     "matplotlib>=3.7" \
     "wfdb>=4.1" \
     "requests>=2.31"
+    "huggingface_hub>=0.23"
 
 COPY scripts/ECG_Classifier.py scripts/ECG_Classifier.py
 COPY scripts/pages/ scripts/pages/
