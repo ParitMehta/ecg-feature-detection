@@ -92,14 +92,18 @@ def clean_signal(sig_12x1000):
     return out.astype(np.float32)
 
 def call_backend(sig_12x1000: np.ndarray) -> tuple[np.ndarray, list[str]]:
-    """Send ECG to FastAPI backend and get probabilities + class names."""
     payload = {"signal": sig_12x1000.tolist()}
-    try:
-        res = requests.post(API_URL, json=payload, timeout=5)
-        res.raise_for_status()
-    except Exception as e:
-        st.error(f"Error contacting model API: {e}")
-        st.stop()
+    with st.spinner("Contacting model API... (may take up to 60s on first load)"):
+        for attempt in range(3):
+            try:
+                res = requests.post(API_URL, json=payload, timeout=90)
+                res.raise_for_status()
+                break
+            except Exception as e:
+                if attempt == 2:
+                    st.error(f"Error contacting model API: {e}")
+                    st.stop()
+                time.sleep(5)
     data = res.json()
     probs = np.array(data.get("probabilities", []), dtype=float)
     classes_from_api = data.get("classes", [])
