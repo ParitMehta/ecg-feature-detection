@@ -1,6 +1,10 @@
 # src/paths.py
-import os
+
+
 from pathlib import Path
+
+import os
+
 
 ROOT      = Path(os.getenv("PROJECT_ROOT", Path(__file__).resolve().parents[1]))
 DATASET   = ROOT / "data/physionet.org/files/ptb-xl/1.0.3"
@@ -15,4 +19,7 @@ FAIRNESS   = REPORTS / "fairness"
 MLRUNS     = ROOT / "mlruns"
 
 for p in (PROCESSED, EDA, PREPROCESS, TRAIN, INSPECT, FAIRNESS):
-    p.mkdir(parents=True, exist_ok=True)
+    try:
+        p.mkdir(parents=True, exist_ok=True)
+    except (PermissionError, OSError):
+        pass

@@ -1,39 +1,57 @@
 # api/main.py
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+print("PATH:", sys.path[:3], flush=True)
+print("FILES:", list(Path("/app").iterdir()), flush=True)
+
+import os
 import numpy as np
 import torch
 from fastapi import FastAPI
 from pydantic import BaseModel
+from huggingface_hub import hf_hub_download
 
-from src.paths import PROCESSED, REPORTS
+from src.paths import PROCESSED
 from src.model import ECGNet
-
-TRAIN_OUT = REPORTS / "train"
 
 app = FastAPI(title="ECGNet API")
 
-# ---------- Request / response schemas ----------
 class ECGRequest(BaseModel):
-    # 1000x12 array flattened as list of lists
-    signal: list[list[float]]  # shape (1000, 12)
+    signal: list[list[float]]
 
 class ECGResponse(BaseModel):
     classes: list[str]
     probabilities: list[float]
     predicted_labels: list[str]
 
-
-# ---------- Load model and metadata once ----------
 def load_model_and_classes():
-    classes = (PROCESSED / "class_names.txt").read_text().splitlines()
+    token = os.getenv("HF_TOKEN")
+    classes_path = hf_hub_download(
+        repo_id="treehugger4/ecg-model",
+        filename="processed/class_names.txt",
+        repo_type="model",
+        token=token
+    )
+    classes = open(classes_path).read().splitlines()
     dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model_path = hf_hub_download(
+        repo_id="treehugger4/ecg-model",
+        filename="best_model.pt",
+        repo_type="model",
+        token=token
+    )
     model = ECGNet(n_leads=12, n_classes=len(classes)).to(dev)
-    state = torch.load(TRAIN_OUT / "best_model.pt", map_location=dev)
+    state = torch.load(model_path, map_location=dev)
     model.load_state_dict(state)
     model.eval()
     return model, dev, classes
 
 model, device, CLASSES = load_model_and_classes()
-
 
 def predict_probs(sig_1000x12: np.ndarray) -> np.ndarray:
     x = torch.from_numpy(sig_1000x12.astype(np.float32)).permute(1, 0).unsqueeze(0).to(device)
@@ -41,8 +59,6 @@ def predict_probs(sig_1000x12: np.ndarray) -> np.ndarray:
         probs = torch.sigmoid(model(x)).cpu().numpy().ravel()
     return probs
 
-
-# ---------- Endpoints ----------
 @app.get("/")
 def healthcheck():
     return {"status": "ok", "model": "ECGNet", "n_classes": len(CLASSES)}
@@ -52,12 +68,9 @@ def predict(request: ECGRequest):
     arr = np.array(request.signal, dtype=np.float32)
     if arr.shape != (1000, 12):
         return {"classes": CLASSES, "probabilities": [], "predicted_labels": []}
-
     probs = predict_probs(arr)
-    # Simple default threshold 0.5 here; your Streamlit app can apply tuned thresholds client-side
     preds = (probs >= 0.5).astype(int)
     pred_labels = [c for c, v in zip(CLASSES, preds) if v] or ["(none)"]
-
     return ECGResponse(
         classes=CLASSES,
         probabilities=probs.tolist(),
