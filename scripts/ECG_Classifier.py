@@ -2,8 +2,21 @@
 # -*- coding: utf-8 -*-
 """PTB-XL — Streamlit demo (browse test set OR upload your own ECG)."""
 
-import sys, io, tempfile, json
+import sys, io, tempfile, json, subprocess, time, atexit
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import requests as _requests
+try:
+    _requests.get("http://localhost:8000/predict", timeout=1)
+except Exception:
+    _api = subprocess.Popen(
+        [sys.executable, "-m", "uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"],
+        cwd=str(Path(__file__).resolve().parents[1])
+    )
+    atexit.register(_api.terminate)  # kill it when streamlit exits
+    time.sleep(3)
 
 import numpy as np
 import pandas as pd
@@ -20,6 +33,8 @@ LEADS = ["I","II","III","aVR","aVL","aVF","V1","V2","V3","V4","V5","V6"]
 
 import os
 API_URL = os.getenv("API_URL", "http://localhost:8000/predict")
+
+
 
 st.set_page_config(page_title="ECG Classifier Demo", layout="wide")
 st.title("🫀 ECG Diagnostic Classifier")
