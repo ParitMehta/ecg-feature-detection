@@ -19,10 +19,13 @@ jobs:
           cd hf_space
           git config user.email "ci@github.com"
           git config user.name "GitHub CI"
-          cp -r ../api/ api/
-          cp -r ../src/ src/
-          cp ../Dockerfile.api Dockerfile
-          cp ../requirements.txt requirements.txt
+
+          # sync all required files from GitHub repo
+          rsync -av --delete ../api/       api/
+          rsync -av --delete ../src/       src/
+          cp ../Dockerfile.api             Dockerfile
+          cp ../requirements.txt           requirements.txt
+
           git add -A
           git diff --cached --quiet || git commit -m "sync from GitHub ${{ github.sha }}"
           git push
