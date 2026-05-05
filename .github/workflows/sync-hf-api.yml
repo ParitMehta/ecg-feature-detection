@@ -22,6 +22,7 @@ jobs:
           cp -r ../api/ api/
           cp -r ../src/ src/
           cp ../Dockerfile.api Dockerfile
+          cp ../requirements.txt requirements.txt
           git add -A
           git diff --cached --quiet || git commit -m "sync from GitHub ${{ github.sha }}"
           git push
