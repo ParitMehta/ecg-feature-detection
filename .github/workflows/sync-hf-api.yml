@@ -23,6 +23,7 @@ jobs:
           # sync all required files from GitHub repo
           rsync -av --delete ../api/       api/
           rsync -av --delete ../src/       src/
+          rsync -av --delete ../data/      data/
           cp ../Dockerfile.api             Dockerfile
           cp ../requirements.txt           requirements.txt
 
