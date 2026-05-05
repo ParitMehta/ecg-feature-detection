@@ -1,4 +1,11 @@
+# ignore all data except processed test set
 data/
+!data/
+!data/processed/
+!data/processed/class_names.txt
+!data/processed/X_test.npy
+!data/processed/y_test.npy
+
 .venv/
 __pycache__/
 *.pyc
