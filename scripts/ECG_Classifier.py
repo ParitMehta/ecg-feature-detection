@@ -72,12 +72,15 @@ with st.expander("▶  How to use this app", expanded=False):
 # ---------- cached loaders ----------
 @st.cache_data
 def load_test():
-    X = np.load(PROCESSED / "X_test.npy")
-    y = np.load(PROCESSED / "y_test.npy")
+    from huggingface_hub import hf_hub_download
+    import os
+    token = os.getenv("HF_TOKEN")
+    X = np.load(hf_hub_download("treehugger4/ecg-model", "processed/X_test.npy", repo_type="model", token=token))
+    y = np.load(hf_hub_download("treehugger4/ecg-model", "processed/y_test.npy", repo_type="model", token=token))
+    classes_path = hf_hub_download("treehugger4/ecg-model", "processed/class_names.txt", repo_type="model", token=token)
+    classes = Path(classes_path).read_text().splitlines()
     np.nan_to_num(X, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
-    classes = (PROCESSED / "class_names.txt").read_text().splitlines()
     return X, y, classes
-
 def clean_signal(sig_12x1000):
     b, a = butter(3, [0.5, 40], btype="band", fs=100)
     out = np.empty_like(sig_12x1000)
