@@ -10,7 +10,6 @@ import torch
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from huggingface_hub import hf_hub_download
 
 from src.model import ECGNet
 
@@ -21,25 +20,16 @@ _classes = []
 _ready = False
 _load_error = None
 
+ARTIFACTS_DIR = Path(__file__).resolve().parents[1] / "artifacts"
+
 
 def _load_model_background():
     global _model, _device, _classes, _ready, _load_error
     try:
-        token = os.getenv("HF_TOKEN")
-        classes_path = hf_hub_download(
-            repo_id="treehugger4/ecg-model",
-            filename="processed/class_names.txt",
-            repo_type="model",
-            token=token
-        )
+        classes_path = ARTIFACTS_DIR / "processed" / "class_names.txt"
         _classes = open(classes_path).read().splitlines()
         _device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        model_path = hf_hub_download(
-            repo_id="treehugger4/ecg-model",
-            filename="best_model.pt",
-            repo_type="model",
-            token=token
-        )
+        model_path = ARTIFACTS_DIR / "best_model.pt"
         _model = ECGNet(n_leads=12, n_classes=len(_classes)).to(_device)
         state = torch.load(model_path, map_location=_device)
         _model.load_state_dict(state)
@@ -51,7 +41,6 @@ def _load_model_background():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Fire model loading in background so port 7860 is free immediately
     t = threading.Thread(target=_load_model_background, daemon=True)
     t.start()
     yield
